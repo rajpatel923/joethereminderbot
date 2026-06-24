@@ -7,16 +7,17 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# Load .env before anything else
 load_dotenv()
 
 
 def _validate_env():
     required = [
         "TELEGRAM_BOT_TOKEN",
-        "TELEGRAM_CHAT_ID",
         "LLM_PROVIDER",
     ]
+    # Accept either TELEGRAM_ALLOWED_IDS (multi-user) or TELEGRAM_CHAT_ID (legacy)
+    if not os.environ.get("TELEGRAM_ALLOWED_IDS") and not os.environ.get("TELEGRAM_CHAT_ID"):
+        required.append("TELEGRAM_CHAT_ID")  # trigger the missing-var message
     missing = [var for var in required if not os.environ.get(var)]
     if missing:
         print(f"ERROR: Missing required environment variables: {', '.join(missing)}", file=sys.stderr)
@@ -25,7 +26,6 @@ def _validate_env():
 
 _validate_env()
 
-# Imports after env validation
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from telegram.ext import (
     ApplicationBuilder,
@@ -36,7 +36,6 @@ from telegram.ext import (
 
 from src.ai.client import AIClient
 from src.ai.provider import make_llm
-from src.agent.graph import build_graph
 from src.memory.database import Database
 from src.bot.handlers import MessageHandler
 from src.bot.commands import CommandHandler as BotCommandHandler
@@ -66,18 +65,17 @@ async def main():
     db = Database()
     db.connect()
 
-    tz = os.environ.get("TIMEZONE", "America/Toronto")
+    tz = os.environ.get("TIMEZONE", "America/Chicago")
     provider = os.environ["LLM_PROVIDER"]
     ai = AIClient()
-    graph = build_graph(db=db, tz=tz, llm=make_llm(provider))
+    llm = make_llm(provider)
 
-    msg_handler = MessageHandler(db=db, graph=graph)
+    msg_handler = MessageHandler(db=db, llm=llm, tz=tz)
     cmd_handler = BotCommandHandler(db=db, ai=ai)
 
     token = os.environ["TELEGRAM_BOT_TOKEN"]
     app = ApplicationBuilder().token(token).build()
 
-    # Register command handlers
     app.add_handler(CommandHandler("start", cmd_handler.start))
     app.add_handler(CommandHandler("help", cmd_handler.help_cmd))
     app.add_handler(CommandHandler("note", cmd_handler.note))
@@ -85,16 +83,16 @@ async def main():
     app.add_handler(CommandHandler("forget", cmd_handler.forget))
     app.add_handler(CommandHandler("remind", cmd_handler.remind))
     app.add_handler(CommandHandler("reminders", cmd_handler.reminders))
+    app.add_handler(CommandHandler("history", cmd_handler.history))
     app.add_handler(CommandHandler("checkin", cmd_handler.checkin))
+    app.add_handler(CommandHandler("calendar", cmd_handler.calendar))
+    app.add_handler(CommandHandler("calauth", cmd_handler.calauth))
 
-    # Register message handler (non-command text messages)
     app.add_handler(
         TGMessageHandler(filters.TEXT & ~filters.COMMAND, msg_handler.handle_message)
     )
 
-    # Set up scheduler
     scheduler = AsyncIOScheduler(timezone=tz)
-
     bot = app.bot
 
     scheduler.add_job(
@@ -118,12 +116,9 @@ async def main():
     scheduler.start()
     logger.info(
         "Scheduler started. Check-in at %02d:%02d %s, reminder poll every 60s",
-        checkin_hour,
-        checkin_minute,
-        tz,
+        checkin_hour, checkin_minute, tz,
     )
 
-    # Graceful shutdown
     stop_event = asyncio.Event()
 
     def _handle_sigterm(*_):
@@ -133,7 +128,6 @@ async def main():
     signal.signal(signal.SIGTERM, _handle_sigterm)
     signal.signal(signal.SIGINT, _handle_sigterm)
 
-    # Start polling
     await app.initialize()
     await app.start()
     await app.updater.start_polling(drop_pending_updates=True)

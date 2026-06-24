@@ -21,6 +21,13 @@ def get_llm_config(provider: str) -> tuple[str, str, str]:
             raise ValueError("LLM_PROVIDER=ollama requires OLLAMA_MODEL_NAME to be set")
         return base_url, "ollama", model_name
 
+    elif provider == "openai":
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("LLM_PROVIDER=openai requires OPENAI_API_KEY to be set")
+        model_name = os.environ.get("OPENAI_MODEL_NAME", "gpt-4o-mini")
+        return "https://api.openai.com/v1", api_key, model_name
+
     elif provider == "openrouter":
         base_url = "https://openrouter.ai/api/v1"
         api_key = os.environ.get("OPENROUTER_API_KEY")

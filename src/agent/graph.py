@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -14,8 +15,8 @@ logger = logging.getLogger(__name__)
 FALLBACK_MESSAGE = "Hey, my brain is offline right now — can't connect to the AI. Try again in a bit!"
 
 
-def build_graph(db: Database, tz: str, llm: ChatOpenAI):
-    tools = make_tools(db, tz)
+def build_graph(db: Database, tz: str, llm: ChatOpenAI, user_id: Optional[int] = None):
+    tools = make_tools(db, tz, user_id=user_id)
     llm_with_tools = llm.bind_tools(tools)
 
     async def agent_node(state: AgentState) -> dict:
@@ -45,10 +46,10 @@ def build_graph(db: Database, tz: str, llm: ChatOpenAI):
     return graph.compile()
 
 
-async def invoke_agent(graph, user_text: str, history, notes, pending_followup=None) -> str:
+async def invoke_agent(graph, user_text: str, history, notes, pending_followup=None, tz: str = "America/Chicago") -> str:
     from src.ai.prompts import build_agent_system_prompt
 
-    system_prompt = build_agent_system_prompt(notes, pending_followup)
+    system_prompt = build_agent_system_prompt(notes, pending_followup, tz)
     messages = [SystemMessage(content=system_prompt)]
     for msg in history:
         if msg.role == "user":
