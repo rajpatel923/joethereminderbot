@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd \"/Users/rajpatel/Documents/vscode/Building Agentic AI/PersonalReminderAgent\" && pip install -q -r requirements.txt pytest pytest-asyncio 2>&1 | tail -5)",
+      "Bash(cd \"/Users/rajpatel/Documents/vscode/Building Agentic AI/PersonalReminderAgent\" && python -m pytest tests/ -v 2>&1)",
+      "Bash(cd \"/Users/rajpatel/Documents/vscode/Building Agentic AI/PersonalReminderAgent\" && sed -i '' 's/datetime\\\\.utcnow\\(\\)/datetime.now\\(timezone.utc\\).replace\\(tzinfo=None\\)/g' tests/test_memory.py tests/test_scheduler.py)"
+    ]
+  }
+}

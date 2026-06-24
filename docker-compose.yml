@@ -1,0 +1,16 @@
+services:
+  reminder-agent:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os; os.path.exists('/app/data')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
