@@ -36,7 +36,10 @@ def create_oauth_flow():
     client_id, client_secret, redirect_uri = _get_oauth_config()
     flow = Flow.from_client_config(
         _build_client_config(client_id, client_secret, redirect_uri),
-        scopes=["https://www.googleapis.com/auth/calendar"],
+        scopes=[
+            "https://www.googleapis.com/auth/calendar",
+            "https://www.googleapis.com/auth/gmail.modify",
+        ],
         redirect_uri=redirect_uri,
     )
     return flow
@@ -113,6 +116,68 @@ def create_event(service, title: str, start_dt: datetime, end_dt: Optional[datet
     event_id = result.get("id", "")
     logger.info("Created calendar event '%s' id=%s", title, event_id)
     return event_id
+
+
+def find_event_by_title(service, title_keyword: str, days_ahead: int = 30) -> Optional[dict]:
+    """Find the first upcoming event whose summary contains title_keyword (case-insensitive).
+    Returns {id, summary, start, end} or None."""
+    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    time_min = today_start.isoformat()
+    time_max = (today_start + timedelta(days=days_ahead)).isoformat()
+    result = (
+        service.events()
+        .list(
+            calendarId="primary",
+            timeMin=time_min,
+            timeMax=time_max,
+            maxResults=50,
+            singleEvents=True,
+            orderBy="startTime",
+        )
+        .execute()
+    )
+    keyword_lower = title_keyword.lower()
+    for item in result.get("items", []):
+        if keyword_lower in item.get("summary", "").lower():
+            return {
+                "id": item["id"],
+                "summary": item.get("summary", "(no title)"),
+                "start": item["start"].get("dateTime", item["start"].get("date", "")),
+                "end": item["end"].get("dateTime", item["end"].get("date", "")),
+            }
+    return None
+
+
+def delete_event(service, event_id: str) -> None:
+    """Delete a Google Calendar event by ID."""
+    service.events().delete(calendarId="primary", eventId=event_id).execute()
+    logger.info("Deleted calendar event id=%s", event_id)
+
+
+def update_event(
+    service,
+    event_id: str,
+    new_title: str = "",
+    new_start_dt: Optional[datetime] = None,
+    new_end_dt: Optional[datetime] = None,
+) -> dict:
+    """Partially update a calendar event (title, start, end). Returns updated event resource."""
+    patch_body = {}
+    if new_title:
+        patch_body["summary"] = new_title
+    if new_start_dt:
+        patch_body["start"] = {
+            "dateTime": new_start_dt.isoformat(),
+            "timeZone": str(new_start_dt.tzinfo) if new_start_dt.tzinfo else "UTC",
+        }
+    if new_end_dt:
+        patch_body["end"] = {
+            "dateTime": new_end_dt.isoformat(),
+            "timeZone": str(new_end_dt.tzinfo) if new_end_dt.tzinfo else "UTC",
+        }
+    result = service.events().patch(calendarId="primary", eventId=event_id, body=patch_body).execute()
+    logger.info("Updated calendar event id=%s", event_id)
+    return result
 
 
 def list_events(service, days_ahead: int = 7) -> list[dict]:

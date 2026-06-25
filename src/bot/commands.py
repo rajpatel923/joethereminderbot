@@ -22,8 +22,9 @@ HELP_TEXT = """Here's what I can do:
 /reminders — List your pending reminders
 /history — Show recently sent reminders
 /checkin — Get your morning summary right now
-/calendar — Connect Google Calendar
-/calauth <code> — Complete Google Calendar setup
+/calendar — Connect Google Calendar (also grants Gmail access)
+/calauth <code> — Complete Google Calendar + Gmail setup
+/scanmail — Scan your inbox right now
 /help — Show this message"""
 
 
@@ -237,6 +238,24 @@ class CommandHandler:
         except Exception as e:
             logger.exception("Failed to exchange OAuth code")
             await update.message.reply_text(f"Auth failed: {e}")
+
+    async def scanmail(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not _allowed(update):
+            return
+        user = self._get_user(update)
+        tokens = self.db.get_google_tokens(user.id)
+        if not tokens:
+            await update.message.reply_text(
+                "You haven't connected Google yet. Run /calendar first."
+            )
+            return
+        await update.message.reply_text("Scanning your inbox...")
+        try:
+            from src.scheduler.jobs import gmail_morning_scan
+            await gmail_morning_scan(self.db, self.ai, context.bot, user_ids=[user.id])
+        except Exception:
+            logger.exception("Manual Gmail scan failed for user_id=%d", user.id)
+            await update.message.reply_text("Something went wrong scanning your inbox.")
 
     async def checkin(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not _allowed(update):

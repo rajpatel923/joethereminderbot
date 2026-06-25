@@ -39,7 +39,7 @@ from src.ai.provider import make_llm
 from src.memory.database import Database
 from src.bot.handlers import MessageHandler
 from src.bot.commands import CommandHandler as BotCommandHandler
-from src.scheduler.jobs import check_reminders, daily_checkin
+from src.scheduler.jobs import check_reminders, daily_checkin, gmail_morning_scan
 
 logging.basicConfig(
     level=logging.INFO,
@@ -70,7 +70,7 @@ async def main():
     ai = AIClient()
     llm = make_llm(provider)
 
-    msg_handler = MessageHandler(db=db, llm=llm, tz=tz)
+    msg_handler = MessageHandler(db=db, llm=llm, tz=tz, ai=ai)
     cmd_handler = BotCommandHandler(db=db, ai=ai)
 
     token = os.environ["TELEGRAM_BOT_TOKEN"]
@@ -87,6 +87,7 @@ async def main():
     app.add_handler(CommandHandler("checkin", cmd_handler.checkin))
     app.add_handler(CommandHandler("calendar", cmd_handler.calendar))
     app.add_handler(CommandHandler("calauth", cmd_handler.calauth))
+    app.add_handler(CommandHandler("scanmail", cmd_handler.scanmail))
 
     app.add_handler(
         TGMessageHandler(filters.TEXT & ~filters.COMMAND, msg_handler.handle_message)
@@ -106,6 +107,15 @@ async def main():
     checkin_hour, checkin_minute = _parse_checkin_time()
     scheduler.add_job(
         daily_checkin,
+        "cron",
+        hour=checkin_hour,
+        minute=checkin_minute,
+        misfire_grace_time=60,
+        kwargs={"db": db, "ai": ai, "bot": bot},
+    )
+
+    scheduler.add_job(
+        gmail_morning_scan,
         "cron",
         hour=checkin_hour,
         minute=checkin_minute,

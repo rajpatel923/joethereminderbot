@@ -23,10 +23,11 @@ def _parse_allowed_ids() -> set[int]:
 
 
 class MessageHandler:
-    def __init__(self, db: Database, llm: ChatOpenAI, tz: str):
+    def __init__(self, db: Database, llm: ChatOpenAI, tz: str, ai=None):
         self.db = db
         self.llm = llm
         self.tz = tz
+        self.ai = ai
         self._allowed_ids = _parse_allowed_ids()
         self._window = int(os.environ.get("CONVERSATION_WINDOW", "20"))
         self._user_graphs: dict[int, object] = {}
@@ -35,7 +36,7 @@ class MessageHandler:
     def _get_graph(self, user_id: int):
         if user_id not in self._user_graphs:
             self._user_graphs[user_id] = build_graph(
-                db=self.db, tz=self.tz, llm=self.llm, user_id=user_id
+                db=self.db, tz=self.tz, llm=self.llm, user_id=user_id, ai=self.ai
             )
         return self._user_graphs[user_id]
 

@@ -143,6 +143,88 @@ async def _fire_reminder(reminder: Reminder, chat_id: int, db: Database, ai: AIC
         logger.exception("Failed to send reminder id=%d", reminder.id)
 
 
+async def gmail_morning_scan(db: Database, ai: AIClient, bot, user_ids: list[int] = None):
+    from src.integrations.gmail import (
+        get_gmail_service, get_unread_emails, get_email_body,
+        classify_email, trash_email, star_email, create_draft_reply,
+        ensure_processed_label, mark_processed,
+    )
+
+    all_users = db.get_all_allowed_users()
+    users = [u for u in all_users if user_ids is None or u.id in user_ids]
+
+    for user in users:
+        tokens = db.get_google_tokens(user.id)
+        if not tokens:
+            continue
+
+        try:
+            service = get_gmail_service(tokens, db, user.id)
+            label_id = ensure_processed_label(service)
+            emails = get_unread_emails(service)
+        except Exception:
+            logger.exception("Gmail scan setup failed for user_id=%d", user.id)
+            continue
+
+        if not emails:
+            continue
+
+        counts = {"spam": 0, "marketing": 0, "real": 0, "important": []}
+
+        for email in emails:
+            try:
+                category = await classify_email(ai, email["sender"], email["subject"], email["snippet"])
+
+                if category == "SPAM":
+                    trash_email(service, email["id"])
+                    counts["spam"] += 1
+                elif category == "MARKETING":
+                    trash_email(service, email["id"])
+                    counts["marketing"] += 1
+                elif category == "REAL_PERSON":
+                    body = get_email_body(service, email["id"])
+                    await create_draft_reply(service, ai, email["sender"], email["subject"], body)
+                    counts["real"] += 1
+                elif category == "IMPORTANT":
+                    body = get_email_body(service, email["id"])
+                    star_email(service, email["id"])
+                    await create_draft_reply(service, ai, email["sender"], email["subject"], body)
+                    counts["important"].append(f'"{email["subject"]}" from {email["sender"]}')
+
+                mark_processed(service, email["id"], label_id)
+            except Exception:
+                logger.exception("Failed to process email id=%s for user_id=%d", email["id"], user.id)
+
+        total = counts["spam"] + counts["marketing"] + counts["real"] + len(counts["important"])
+        logger.info(
+            "Gmail scan complete for user_id=%d: %d processed (%d spam, %d marketing, %d real, %d important)",
+            user.id, total, counts["spam"], counts["marketing"], counts["real"], len(counts["important"]),
+        )
+        await _send_gmail_summary(bot, user.telegram_id, counts)
+
+
+async def _send_gmail_summary(bot, telegram_id: int, counts: dict):
+    spam_total = counts["spam"] + counts["marketing"]
+    draft_total = counts["real"] + len(counts["important"])
+    total = spam_total + draft_total
+
+    if total == 0:
+        return
+
+    lines = [f"Morning inbox scan ({total} email{'s' if total != 1 else ''} processed):"]
+    if spam_total:
+        lines.append(f"- {spam_total} spam/marketing email{'s' if spam_total != 1 else ''} trashed")
+    if draft_total:
+        lines.append(f"- {draft_total} reply draft{'s' if draft_total != 1 else ''} created (check Gmail Drafts)")
+    for item in counts["important"]:
+        lines.append(f"- Important: {item}")
+
+    try:
+        await bot.send_message(chat_id=telegram_id, text="\n".join(lines))
+    except Exception:
+        logger.exception("Failed to send Gmail summary to telegram_id=%d", telegram_id)
+
+
 async def daily_checkin(db: Database, ai: AIClient, bot):
     users = db.get_all_allowed_users()
 

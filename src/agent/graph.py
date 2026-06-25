@@ -15,8 +15,8 @@ logger = logging.getLogger(__name__)
 FALLBACK_MESSAGE = "Hey, my brain is offline right now — can't connect to the AI. Try again in a bit!"
 
 
-def build_graph(db: Database, tz: str, llm: ChatOpenAI, user_id: Optional[int] = None):
-    tools = make_tools(db, tz, user_id=user_id)
+def build_graph(db: Database, tz: str, llm: ChatOpenAI, user_id: Optional[int] = None, ai=None):
+    tools = make_tools(db, tz, user_id=user_id, ai=ai)
     llm_with_tools = llm.bind_tools(tools)
 
     async def agent_node(state: AgentState) -> dict:
