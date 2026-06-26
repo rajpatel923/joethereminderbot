@@ -15,6 +15,7 @@ def _validate_env():
         "TELEGRAM_BOT_TOKEN",
         "LLM_PROVIDER",
     ]
+
     # Accept either TELEGRAM_ALLOWED_IDS (multi-user) or TELEGRAM_CHAT_ID (legacy)
     if not os.environ.get("TELEGRAM_ALLOWED_IDS") and not os.environ.get("TELEGRAM_CHAT_ID"):
         required.append("TELEGRAM_CHAT_ID")  # trigger the missing-var message
