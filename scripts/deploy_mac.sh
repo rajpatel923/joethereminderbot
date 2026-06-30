@@ -26,24 +26,14 @@ fi
 echo "-> Pushing to GitHub..."
 git push origin main
 
-# --- Docker: build all images ---
+# --- Docker: build and push bot image only ---
 echo ""
-echo "-> Building images..."
+echo "-> Building bot image..."
 docker build -t "$BOT_IMAGE" .
-docker build -t "$BACKEND_IMAGE" ./dashboard/backend
-docker build -t "$FRONTEND_IMAGE" ./dashboard/frontend
 
-# --- Docker: push to Docker Hub ---
-echo ""
 echo "-> Pushing to Docker Hub..."
 docker push "$BOT_IMAGE"
-docker push "$BACKEND_IMAGE"
-docker push "$FRONTEND_IMAGE"
 
 echo ""
-echo "Done! Images on Docker Hub:"
-echo "  $BOT_IMAGE"
-echo "  $BACKEND_IMAGE"
-echo "  $FRONTEND_IMAGE"
-echo ""
+echo "Done! $BOT_IMAGE is live on Docker Hub."
 echo "On EC2, run:  ./deploy_ec2.sh"

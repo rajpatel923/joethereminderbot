@@ -1,106 +1,60 @@
 #!/usr/bin/env bash
-# Pull latest images from Docker Hub and restart the bot.
-# EC2 only needs this script + a .env file. No git, no source code required.
+# Pull latest bot image from Docker Hub and restart it.
+# EC2 only needs this script + ~/reminder-agent/.env
 # Usage: ./deploy_ec2.sh
 
 set -e
 
 DOCKERHUB_USER="patelraj293"
 BOT_IMAGE="$DOCKERHUB_USER/reminder-agent:latest"
-BACKEND_IMAGE="$DOCKERHUB_USER/reminder-agent-backend:latest"
-FRONTEND_IMAGE="$DOCKERHUB_USER/reminder-agent-frontend:latest"
 PROJECT_DIR="$HOME/reminder-agent"
 DB_PATH="$PROJECT_DIR/data/reminders.db"
-COMPOSE_FILE="$PROJECT_DIR/docker-compose.yml"
 
 echo "=== Personal Reminder Agent — EC2 Deploy ==="
 
-# --- Pick docker compose command ---
-if docker compose version &>/dev/null 2>&1; then
-    DC="docker compose"
-elif command -v docker-compose &>/dev/null; then
-    DC="docker-compose"
-else
-    echo "-> Installing docker-compose..."
-    sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" \
-        -o /usr/local/bin/docker-compose
-    sudo chmod +x /usr/local/bin/docker-compose
-    DC="docker-compose"
-fi
-echo "-> Using: $DC"
-
-# --- Ensure docker and sqlite3 are available ---
+# --- Ensure sqlite3 is available ---
 if ! command -v sqlite3 &>/dev/null; then
     echo "-> Installing sqlite3..."
     sudo yum install -y sqlite 2>/dev/null || sudo apt-get install -y sqlite3 2>/dev/null || true
 fi
 
-# --- Create project directory if needed ---
-mkdir -p "$PROJECT_DIR/data"
-
 # --- Check .env exists ---
-ENV_FILE="$PROJECT_DIR/.env"
-if [ ! -f "$ENV_FILE" ]; then
+if [ ! -f "$PROJECT_DIR/.env" ]; then
     echo ""
-    echo "ERROR: .env file not found at $ENV_FILE"
-    echo "Create it with your secrets before running this script:"
-    echo "  nano $ENV_FILE"
+    echo "ERROR: .env not found at $PROJECT_DIR/.env"
+    echo "Create it first:  nano $PROJECT_DIR/.env"
     exit 1
 fi
 
-# --- Write docker-compose.yml (no build, images only) ---
-echo "-> Writing docker-compose.yml..."
-cat > "$COMPOSE_FILE" <<EOF
-services:
-  reminder-agent:
-    image: $BOT_IMAGE
-    restart: unless-stopped
-    env_file: .env
-    volumes:
-      - ./data:/app/data
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+# --- Create data directory if needed ---
+mkdir -p "$PROJECT_DIR/data"
 
-  dashboard-backend:
-    image: $BACKEND_IMAGE
-    restart: unless-stopped
-    env_file: .env
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./data:/app/data
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
-  dashboard-frontend:
-    image: $FRONTEND_IMAGE
-    restart: unless-stopped
-    ports:
-      - "3000:80"
-    environment:
-      - VITE_API_URL=http://localhost:8000
-EOF
-
-# --- Pull latest images from Docker Hub ---
-echo "-> Pulling latest images from Docker Hub..."
+# --- Pull latest image ---
+echo "-> Pulling $BOT_IMAGE..."
 docker pull "$BOT_IMAGE"
-docker pull "$BACKEND_IMAGE"
-docker pull "$FRONTEND_IMAGE"
 
-# --- Restart containers ---
-echo "-> Restarting containers..."
-cd "$PROJECT_DIR"
-$DC up -d
+# --- Stop and remove old container if running ---
+echo "-> Stopping old container..."
+docker rm -f reminder-agent 2>/dev/null || true
 
-# --- Wait for containers to be running ---
-echo "-> Waiting for containers..."
-for i in $(seq 1 15); do
-    RUNNING=$($DC ps --status running --quiet 2>/dev/null | wc -l | tr -d ' ')
-    if [ "$RUNNING" -ge 1 ]; then
-        echo "   Containers up ($RUNNING running)."
+# --- Start new container ---
+echo "-> Starting new container..."
+docker run -d \
+    --name reminder-agent \
+    --restart unless-stopped \
+    --env-file "$PROJECT_DIR/.env" \
+    -v "$PROJECT_DIR/data:/app/data" \
+    "$BOT_IMAGE"
+
+# --- Wait for it to be running ---
+echo "-> Waiting for container..."
+for i in $(seq 1 10); do
+    STATUS=$(docker inspect -f '{{.State.Status}}' reminder-agent 2>/dev/null || echo "unknown")
+    if [ "$STATUS" = "running" ]; then
+        echo "   Container is running."
         break
     fi
-    echo "   ($i/15) waiting..."
+    echo "   ($i/10) status: $STATUS..."
     sleep 2
 done
 
@@ -140,4 +94,4 @@ else
 fi
 
 echo ""
-echo "Deploy complete!"
+echo "Deploy complete! Logs: docker logs -f reminder-agent"
