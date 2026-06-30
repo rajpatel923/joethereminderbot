@@ -1,5 +1,6 @@
 services:
   reminder-agent:
+    image: rajpatel923/reminder-agent:latest
     build: .
     restart: unless-stopped
     env_file:
@@ -16,6 +17,7 @@ services:
       start_period: 10s
 
   dashboard-backend:
+    image: rajpatel923/reminder-agent-backend:latest
     build: ./dashboard/backend
     restart: unless-stopped
     env_file:
@@ -29,6 +31,7 @@ services:
       - "host.docker.internal:host-gateway"
 
   dashboard-frontend:
+    image: rajpatel923/reminder-agent-frontend:latest
     build: ./dashboard/frontend
     restart: unless-stopped
     ports:

@@ -1,49 +1,88 @@
 #!/usr/bin/env bash
-# Run on EC2 inside the project directory to pull latest code, rebuild containers,
-# and fix any existing duplicate reminders in the database.
-# Usage: ./scripts/deploy_ec2.sh
+# Pull latest images from Docker Hub and restart the bot.
+# EC2 only needs this script + a .env file. No git, no source code required.
+# Usage: ./deploy_ec2.sh
 
 set -e
 
-cd "$(dirname "$0")/.."
+DOCKERHUB_USER="rajpatel923"
+BOT_IMAGE="$DOCKERHUB_USER/reminder-agent:latest"
+BACKEND_IMAGE="$DOCKERHUB_USER/reminder-agent-backend:latest"
+FRONTEND_IMAGE="$DOCKERHUB_USER/reminder-agent-frontend:latest"
+PROJECT_DIR="$HOME/reminder-agent"
+DB_PATH="$PROJECT_DIR/data/reminders.db"
+COMPOSE_FILE="$PROJECT_DIR/docker-compose.yml"
 
 echo "=== Personal Reminder Agent — EC2 Deploy ==="
 
-# --- Pull latest code ---
-echo "-> Pulling latest code from GitHub..."
-git pull origin main
+# --- Ensure docker and sqlite3 are available ---
+if ! command -v sqlite3 &>/dev/null; then
+    echo "-> Installing sqlite3..."
+    sudo yum install -y sqlite 2>/dev/null || sudo apt-get install -y sqlite3 2>/dev/null || true
+fi
 
-# --- Rebuild and restart containers ---
-echo "-> Rebuilding and restarting containers..."
-docker compose up -d --build
+# --- Create project directory if needed ---
+mkdir -p "$PROJECT_DIR/data"
 
-# --- Wait for bot container to be healthy ---
-echo "-> Waiting for containers to be healthy..."
+# --- Write docker-compose.yml (no build, images only) ---
+echo "-> Writing docker-compose.yml..."
+cat > "$COMPOSE_FILE" <<EOF
+services:
+  reminder-agent:
+    image: $BOT_IMAGE
+    restart: unless-stopped
+    env_file: $HOME/.env
+    volumes:
+      - $PROJECT_DIR/data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  dashboard-backend:
+    image: $BACKEND_IMAGE
+    restart: unless-stopped
+    env_file: $HOME/.env
+    ports:
+      - "8000:8000"
+    volumes:
+      - $PROJECT_DIR/data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  dashboard-frontend:
+    image: $FRONTEND_IMAGE
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    environment:
+      - VITE_API_URL=http://localhost:8000
+EOF
+
+# --- Pull latest images from Docker Hub ---
+echo "-> Pulling latest images from Docker Hub..."
+docker pull "$BOT_IMAGE"
+docker pull "$BACKEND_IMAGE"
+docker pull "$FRONTEND_IMAGE"
+
+# --- Restart containers ---
+echo "-> Restarting containers..."
+docker compose -f "$COMPOSE_FILE" up -d
+
+# --- Wait for containers to be running ---
+echo "-> Waiting for containers..."
 for i in $(seq 1 15); do
-    STATUS=$(docker compose ps --format json 2>/dev/null | python3 -c "
-import sys, json
-data = sys.stdin.read().strip()
-lines = [l for l in data.splitlines() if l.strip()]
-states = [json.loads(l).get('State', '') for l in lines]
-print('ok' if all(s in ('running', 'healthy') for s in states) else 'waiting')
-" 2>/dev/null || echo "waiting")
-    if [ "$STATUS" = "ok" ]; then
-        echo "   Containers up."
+    RUNNING=$(docker compose -f "$COMPOSE_FILE" ps --status running --quiet 2>/dev/null | wc -l | tr -d ' ')
+    if [ "$RUNNING" -ge 1 ]; then
+        echo "   Containers up ($RUNNING running)."
         break
     fi
     echo "   ($i/15) waiting..."
     sleep 2
 done
 
-# --- Clean up duplicate reminders in the database ---
-echo "-> Cleaning up duplicate reminders in database..."
-DB_PATH="./data/reminders.db"
-
-if [ ! -f "$DB_PATH" ]; then
-    echo "   Database not found at $DB_PATH — skipping cleanup."
-else
+# --- Clean up duplicate reminders in database ---
+echo "-> Cleaning up duplicate reminders..."
+if [ -f "$DB_PATH" ]; then
     BEFORE=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM reminders WHERE sent=FALSE AND reminder_type='single';")
-
     sqlite3 "$DB_PATH" "
         UPDATE reminders
         SET reminder_type = 'checkin'
@@ -56,26 +95,24 @@ else
               GROUP BY content
           );
     "
-
     AFTER=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM reminders WHERE sent=FALSE AND reminder_type='single';")
     FIXED=$((BEFORE - AFTER))
-
-    if [ "$FIXED" -gt 0 ]; then
-        echo "   Demoted $FIXED duplicate reminder(s) to check-in (hidden from list)."
-    else
-        echo "   No duplicates found."
-    fi
+    [ "$FIXED" -gt 0 ] && echo "   Demoted $FIXED duplicate(s) to checkin." || echo "   No duplicates found."
+else
+    echo "   No database yet — skipping."
 fi
 
 # --- Show current pending reminders ---
 echo ""
-echo "=== Current pending reminders ==="
-sqlite3 "$DB_PATH" "
-    SELECT '  #' || id || ' [' || reminder_type || '] ' || remind_at || ' — ' || content
-    FROM reminders
-    WHERE sent = FALSE
-    ORDER BY remind_at ASC;
-" 2>/dev/null || echo "  (could not read database)"
+echo "=== Pending reminders ==="
+if [ -f "$DB_PATH" ]; then
+    sqlite3 "$DB_PATH" "
+        SELECT '  #' || id || ' [' || reminder_type || '] ' || remind_at || ' — ' || SUBSTR(content,1,60)
+        FROM reminders WHERE sent=FALSE ORDER BY remind_at ASC;
+    " || echo "  (none)"
+else
+    echo "  (database not created yet)"
+fi
 
 echo ""
 echo "Deploy complete!"
