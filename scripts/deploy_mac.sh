@@ -26,13 +26,14 @@ fi
 echo "-> Pushing to GitHub..."
 git push origin main
 
-# --- Docker: build and push bot image only ---
+# --- Docker: build for linux/amd64 (EC2) and push ---
 echo ""
-echo "-> Building bot image..."
-docker build -t "$BOT_IMAGE" .
-
-echo "-> Pushing to Docker Hub..."
-docker push "$BOT_IMAGE"
+echo "-> Building bot image for linux/amd64..."
+docker buildx build \
+    --platform linux/amd64 \
+    -t "$BOT_IMAGE" \
+    --push \
+    .
 
 echo ""
 echo "Done! $BOT_IMAGE is live on Docker Hub."
