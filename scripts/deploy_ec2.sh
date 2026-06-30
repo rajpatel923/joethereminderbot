@@ -5,7 +5,7 @@
 
 set -e
 
-DOCKERHUB_USER="rajpatel923"
+DOCKERHUB_USER="patelraj293"
 BOT_IMAGE="$DOCKERHUB_USER/reminder-agent:latest"
 BACKEND_IMAGE="$DOCKERHUB_USER/reminder-agent-backend:latest"
 FRONTEND_IMAGE="$DOCKERHUB_USER/reminder-agent-frontend:latest"
@@ -14,6 +14,20 @@ DB_PATH="$PROJECT_DIR/data/reminders.db"
 COMPOSE_FILE="$PROJECT_DIR/docker-compose.yml"
 
 echo "=== Personal Reminder Agent — EC2 Deploy ==="
+
+# --- Pick docker compose command ---
+if docker compose version &>/dev/null 2>&1; then
+    DC="docker compose"
+elif command -v docker-compose &>/dev/null; then
+    DC="docker-compose"
+else
+    echo "-> Installing docker-compose..."
+    sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" \
+        -o /usr/local/bin/docker-compose
+    sudo chmod +x /usr/local/bin/docker-compose
+    DC="docker-compose"
+fi
+echo "-> Using: $DC"
 
 # --- Ensure docker and sqlite3 are available ---
 if ! command -v sqlite3 &>/dev/null; then
@@ -65,12 +79,12 @@ docker pull "$FRONTEND_IMAGE"
 
 # --- Restart containers ---
 echo "-> Restarting containers..."
-docker compose -f "$COMPOSE_FILE" up -d
+$DC -f "$COMPOSE_FILE" up -d
 
 # --- Wait for containers to be running ---
 echo "-> Waiting for containers..."
 for i in $(seq 1 15); do
-    RUNNING=$(docker compose -f "$COMPOSE_FILE" ps --status running --quiet 2>/dev/null | wc -l | tr -d ' ')
+    RUNNING=$($DC -f "$COMPOSE_FILE" ps --status running --quiet 2>/dev/null | wc -l | tr -d ' ')
     if [ "$RUNNING" -ge 1 ]; then
         echo "   Containers up ($RUNNING running)."
         break
