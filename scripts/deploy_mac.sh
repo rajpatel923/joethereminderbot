@@ -7,7 +7,7 @@ set -e
 
 cd "$(dirname "$0")/.."
 
-DOCKERHUB_USER="rajpatel293"
+DOCKERHUB_USER="patelraj293"
 BOT_IMAGE="$DOCKERHUB_USER/reminder-agent:latest"
 BACKEND_IMAGE="$DOCKERHUB_USER/reminder-agent-backend:latest"
 FRONTEND_IMAGE="$DOCKERHUB_USER/reminder-agent-frontend:latest"
