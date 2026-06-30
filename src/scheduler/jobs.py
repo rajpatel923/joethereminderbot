@@ -47,7 +47,7 @@ async def _generate_followup_text(ai: AIClient, reminder: Reminder) -> str:
         f"Sound like a friend texting. No emojis unless natural. Keep it under 15 words."
     )
     messages = [
-        {"role": "system", "content": "You text like a friend in your mid-twenties."},
+        {"role": "system", "content": "You're a guy in his early 20s texting your friend. Casual, short, real. Use 'bro', 'ngl', 'fr', 'bet', 'lowkey' when natural. Max 12 words. No punctuation formality."},
         {"role": "user", "content": prompt},
     ]
     try:
@@ -59,13 +59,13 @@ async def _generate_followup_text(ai: AIClient, reminder: Reminder) -> str:
 
 def _build_reminder_text(reminder: Reminder) -> str:
     if reminder.reminder_type == "pre_check":
-        return f"Hey, you've got 3 hours to {reminder.content} — made any progress yet?"
+        return f"yo heads up — 3 hours left for '{reminder.content}'. where you at with that?"
     elif reminder.reminder_type == "warning":
-        return f"15 minutes left! Have you finished {reminder.content}?"
+        return f"bro 15 mins!! '{reminder.content}' — you good??"
     elif reminder.reminder_type == "deadline":
-        return f"It's deadline time — did you get to {reminder.content}?"
+        return f"ok that's time — did you get to '{reminder.content}'?"
     else:
-        return f"Hey! Reminder: {reminder.content}"
+        return f"hey! reminder: {reminder.content}"
 
 
 async def check_reminders(db: Database, ai: AIClient, bot):
@@ -211,13 +211,13 @@ async def _send_gmail_summary(bot, telegram_id: int, counts: dict):
     if total == 0:
         return
 
-    lines = [f"Morning inbox scan ({total} email{'s' if total != 1 else ''} processed):"]
+    lines = [f"yo scanned your inbox — {total} email{'s' if total != 1 else ''} handled:"]
     if spam_total:
-        lines.append(f"- {spam_total} spam/marketing email{'s' if spam_total != 1 else ''} trashed")
+        lines.append(f"- trashed {spam_total} spam/marketing email{'s' if spam_total != 1 else ''}")
     if draft_total:
-        lines.append(f"- {draft_total} reply draft{'s' if draft_total != 1 else ''} created (check Gmail Drafts)")
+        lines.append(f"- drafted {draft_total} repl{'ies' if draft_total != 1 else 'y'} (check gmail drafts)")
     for item in counts["important"]:
-        lines.append(f"- Important: {item}")
+        lines.append(f"- heads up, important one: {item}")
 
     try:
         await bot.send_message(chat_id=telegram_id, text="\n".join(lines))

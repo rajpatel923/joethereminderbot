@@ -13,19 +13,19 @@ from src.ai.prompts import CHECKIN_PROMPT_TEMPLATE
 
 logger = logging.getLogger(__name__)
 
-HELP_TEXT = """Here's what I can do:
+HELP_TEXT = """here's what I got:
 
-/note <text> — Save a fact I should remember
-/notes — List all saved notes
-/forget <id> — Delete a note by its ID
-/remind <time> <message> — Set a reminder (e.g. /remind in 2 hours drink water)
-/reminders — List your pending reminders
-/history — Show recently sent reminders
-/checkin — Get your morning summary right now
-/calendar — Connect Google Calendar (also grants Gmail access)
-/calauth <code> — Complete Google Calendar + Gmail setup
-/scanmail — Scan your inbox right now
-/help — Show this message"""
+/note <text> — save something to remember
+/notes — see all your saved notes
+/forget <id> — delete a note by id
+/remind <time> <message> — set a reminder (e.g. /remind in 2 hours drink water)
+/reminders — see what's coming up
+/history — see recently sent reminders
+/checkin — get your morning rundown right now
+/calendar — connect google calendar (gmail too)
+/calauth <code> — finish the google setup
+/scanmail — scan your inbox right now
+/help — you're looking at it"""
 
 
 def _parse_allowed_ids() -> set[int]:
@@ -61,8 +61,8 @@ class CommandHandler:
         if not _allowed(update):
             return
         await update.message.reply_text(
-            "Hey! I'm your personal reminder assistant. "
-            "Just talk to me normally, or use /help to see commands."
+            "yo! I'm your reminder guy — just text me normally and I'll keep you on track. "
+            "/help if you wanna see what I can do"
         )
 
     async def help_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -75,11 +75,11 @@ class CommandHandler:
             return
         text = " ".join(context.args).strip()
         if not text:
-            await update.message.reply_text("Usage: /note <something to remember>")
+            await update.message.reply_text("usage: /note <something to remember>")
             return
         user = self._get_user(update)
         note_id = self.db.save_note(text, user_id=user.id)
-        await update.message.reply_text(f"Got it, I'll remember that (note #{note_id}).")
+        await update.message.reply_text(f"bet, got you (note #{note_id})")
 
     async def notes(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not _allowed(update):
@@ -87,27 +87,27 @@ class CommandHandler:
         user = self._get_user(update)
         all_notes = self.db.get_all_notes(user_id=user.id)
         if not all_notes:
-            await update.message.reply_text("You haven't saved any notes yet.")
+            await update.message.reply_text("nothing saved yet bro")
             return
         lines = [f"#{n.id} — {n.content}" for n in all_notes]
-        await update.message.reply_text("Your notes:\n" + "\n".join(lines))
+        await update.message.reply_text("your notes:\n" + "\n".join(lines))
 
     async def forget(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not _allowed(update):
             return
         if not context.args:
-            await update.message.reply_text("Usage: /forget <note id>")
+            await update.message.reply_text("usage: /forget <note id>")
             return
         try:
             note_id = int(context.args[0])
         except ValueError:
-            await update.message.reply_text("Please give me a numeric note ID.")
+            await update.message.reply_text("need a number for the note id")
             return
         user = self._get_user(update)
         if self.db.delete_note(note_id, user_id=user.id):
-            await update.message.reply_text(f"Done, note #{note_id} is gone.")
+            await update.message.reply_text(f"done, note #{note_id}'s gone")
         else:
-            await update.message.reply_text(f"Couldn't find note #{note_id}.")
+            await update.message.reply_text(f"can't find note #{note_id} tho")
 
     async def remind(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not _allowed(update):
@@ -139,21 +139,21 @@ class CommandHandler:
 
         if not remind_at:
             await update.message.reply_text(
-                "I couldn't figure out when that is. Try something like "
-                "'in 2 hours', 'tomorrow at 9am', or 'next Monday'."
+                "ngl I couldn't parse that time. try something like "
+                "'in 2 hours', 'tomorrow at 9am', or 'next monday'"
             )
             return
 
         content = " ".join(context.args[message_start:]).strip()
         if not content:
-            await update.message.reply_text("What should I remind you about?")
+            await update.message.reply_text("what should I remind you about?")
             return
 
         user = self._get_user(update)
         reminder_id = self.db.save_reminder(content, remind_at, user_id=user.id)
         time_str = remind_at.replace(tzinfo=timezone.utc).astimezone(ZoneInfo(tz)).strftime("%b %d at %I:%M %p %Z")
         await update.message.reply_text(
-            f"Reminder set! I'll ping you on {time_str} about: {content} (#{reminder_id})"
+            f"bet, I'll hit you {time_str} about: {content} (#{reminder_id})"
         )
 
     async def reminders(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -163,14 +163,14 @@ class CommandHandler:
         all_pending = self.db.get_all_pending_reminders(user_id=user.id)
         pending = [r for r in all_pending if r.reminder_type not in ("pre_check", "warning", "checkin")]
         if not pending:
-            await update.message.reply_text("No pending reminders.")
+            await update.message.reply_text("nothing coming up")
             return
         tz = self._tz
         lines = [
             f"#{r.id} — {r.remind_at.replace(tzinfo=timezone.utc).astimezone(ZoneInfo(tz)).strftime('%b %d %I:%M %p %Z')} [{r.category}] — {r.content}"
             for r in pending
         ]
-        await update.message.reply_text("Upcoming reminders:\n" + "\n".join(lines))
+        await update.message.reply_text("coming up:\n" + "\n".join(lines))
 
     async def history(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not _allowed(update):
@@ -178,14 +178,14 @@ class CommandHandler:
         user = self._get_user(update)
         sent = self.db.get_reminder_history(user_id=user.id, limit=15)
         if not sent:
-            await update.message.reply_text("No reminder history yet.")
+            await update.message.reply_text("no history yet")
             return
         tz = self._tz
         lines = [
             f"#{r.id} — {r.remind_at.replace(tzinfo=timezone.utc).astimezone(ZoneInfo(tz)).strftime('%b %d %I:%M %p %Z')} — {r.content}"
             for r in sent
         ]
-        await update.message.reply_text("Recent reminders:\n" + "\n".join(lines))
+        await update.message.reply_text("recent reminders:\n" + "\n".join(lines))
 
     async def calendar(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not _allowed(update):
@@ -203,7 +203,7 @@ class CommandHandler:
         except Exception:
             logger.exception("Failed to start OAuth flow")
             await update.message.reply_text(
-                "Couldn't start Google Calendar auth. Make sure GOOGLE_CLIENT_ID, "
+                "couldn't start google auth. make sure GOOGLE_CLIENT_ID, "
                 "GOOGLE_CLIENT_SECRET, and GOOGLE_REDIRECT_URI are set in .env"
             )
 
@@ -218,7 +218,7 @@ class CommandHandler:
         flow = self._pending_oauth_flows.pop(user.id, None)
         if not flow:
             await update.message.reply_text(
-                "No pending auth session found. Run /calendar first to get an auth URL."
+                "no pending auth session — run /calendar first to get the url"
             )
             return
         try:
@@ -235,7 +235,7 @@ class CommandHandler:
                 expiry,
             )
             await update.message.reply_text(
-                "Google Calendar connected! You can now ask me to create or list calendar events."
+                "google calendar connected! you can ask me to create or check events now"
             )
         except Exception as e:
             logger.exception("Failed to exchange OAuth code")
@@ -248,16 +248,16 @@ class CommandHandler:
         tokens = self.db.get_google_tokens(user.id)
         if not tokens:
             await update.message.reply_text(
-                "You haven't connected Google yet. Run /calendar first."
+                "you haven't connected google yet — run /calendar first"
             )
             return
-        await update.message.reply_text("Scanning your inbox...")
+        await update.message.reply_text("scanning your inbox...")
         try:
             from src.scheduler.jobs import gmail_morning_scan
             await gmail_morning_scan(self.db, self.ai, context.bot, user_ids=[user.id])
         except Exception:
             logger.exception("Manual Gmail scan failed for user_id=%d", user.id)
-            await update.message.reply_text("Something went wrong scanning your inbox.")
+            await update.message.reply_text("something went wrong scanning your inbox, try again")
 
     async def checkin(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not _allowed(update):

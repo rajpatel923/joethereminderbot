@@ -12,7 +12,7 @@ from src.memory.database import Database
 
 logger = logging.getLogger(__name__)
 
-FALLBACK_MESSAGE = "Hey, my brain is offline right now — can't connect to the AI. Try again in a bit!"
+FALLBACK_MESSAGE = "yo my brain's offline rn — can't reach the AI. try again in a sec"
 
 
 def build_graph(db: Database, tz: str, llm: ChatOpenAI, user_id: Optional[int] = None, ai=None):
