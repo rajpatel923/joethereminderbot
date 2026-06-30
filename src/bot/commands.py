@@ -151,7 +151,7 @@ class CommandHandler:
 
         user = self._get_user(update)
         reminder_id = self.db.save_reminder(content, remind_at, user_id=user.id)
-        time_str = remind_at.strftime("%b %d at %I:%M %p")
+        time_str = remind_at.replace(tzinfo=timezone.utc).astimezone(ZoneInfo(tz)).strftime("%b %d at %I:%M %p %Z")
         await update.message.reply_text(
             f"Reminder set! I'll ping you on {time_str} about: {content} (#{reminder_id})"
         )
@@ -161,12 +161,13 @@ class CommandHandler:
             return
         user = self._get_user(update)
         all_pending = self.db.get_all_pending_reminders(user_id=user.id)
-        pending = [r for r in all_pending if r.reminder_type not in ("pre_check", "warning")]
+        pending = [r for r in all_pending if r.reminder_type not in ("pre_check", "warning", "checkin")]
         if not pending:
             await update.message.reply_text("No pending reminders.")
             return
+        tz = self._tz
         lines = [
-            f"#{r.id} — {r.remind_at.strftime('%b %d %I:%M %p')} [{r.category}] — {r.content}"
+            f"#{r.id} — {r.remind_at.replace(tzinfo=timezone.utc).astimezone(ZoneInfo(tz)).strftime('%b %d %I:%M %p %Z')} [{r.category}] — {r.content}"
             for r in pending
         ]
         await update.message.reply_text("Upcoming reminders:\n" + "\n".join(lines))
@@ -179,8 +180,9 @@ class CommandHandler:
         if not sent:
             await update.message.reply_text("No reminder history yet.")
             return
+        tz = self._tz
         lines = [
-            f"#{r.id} — {r.remind_at.strftime('%b %d %I:%M %p')} — {r.content}"
+            f"#{r.id} — {r.remind_at.replace(tzinfo=timezone.utc).astimezone(ZoneInfo(tz)).strftime('%b %d %I:%M %p %Z')} — {r.content}"
             for r in sent
         ]
         await update.message.reply_text("Recent reminders:\n" + "\n".join(lines))
@@ -261,17 +263,17 @@ class CommandHandler:
         if not _allowed(update):
             return
         user = self._get_user(update)
-        await _send_checkin(self.db, self.ai, update.effective_chat.id, context.bot, user_id=user.id)
+        await _send_checkin(self.db, self.ai, update.effective_chat.id, context.bot, user_id=user.id, tz=self._tz)
 
 
-async def _send_checkin(db: Database, ai: AIClient, chat_id: int, bot, user_id=None):
+async def _send_checkin(db: Database, ai: AIClient, chat_id: int, bot, user_id=None, tz: str = "America/Chicago"):
     notes = db.get_all_notes(user_id=user_id)
     reminders = db.get_all_pending_reminders(user_id=user_id)
 
     notes_text = "\n".join(f"- {n.content}" for n in notes) or "None"
     reminders_text = (
         "\n".join(
-            f"- {r.remind_at.strftime('%b %d %I:%M %p')}: {r.content}"
+            f"- {r.remind_at.replace(tzinfo=timezone.utc).astimezone(ZoneInfo(tz)).strftime('%b %d %I:%M %p %Z')}: {r.content}"
             for r in reminders
         )
         or "None"

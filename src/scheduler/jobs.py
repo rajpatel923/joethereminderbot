@@ -235,8 +235,9 @@ async def daily_checkin(db: Database, ai: AIClient, bot):
             return
         chat_id = int(chat_id_str)
         logger.info("Running daily check-in (single-user fallback) chat_id=%d", chat_id)
+        tz_fallback = os.environ.get("TIMEZONE", "America/Chicago")
         try:
-            await _send_checkin(db, ai, chat_id, bot, user_id=None)
+            await _send_checkin(db, ai, chat_id, bot, user_id=None, tz=tz_fallback)
         except Exception:
             logger.exception("Daily check-in failed")
         return
@@ -244,6 +245,6 @@ async def daily_checkin(db: Database, ai: AIClient, bot):
     for user in users:
         logger.info("Running daily check-in for user_id=%d telegram_id=%d", user.id, user.telegram_id)
         try:
-            await _send_checkin(db, ai, user.telegram_id, bot, user_id=user.id)
+            await _send_checkin(db, ai, user.telegram_id, bot, user_id=user.id, tz=user.timezone)
         except Exception:
             logger.exception("Daily check-in failed for user_id=%d", user.id)

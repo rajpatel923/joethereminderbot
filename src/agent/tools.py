@@ -33,23 +33,30 @@ def _find_reminders(db, keyword: str, user_id: Optional[int]):
 
 def make_tools(db, tz: str, user_id: Optional[int] = None, ai=None) -> list:
 
+    def _fmt_local(dt: datetime) -> str:
+        return dt.replace(tzinfo=timezone.utc).astimezone(ZoneInfo(tz)).strftime('%b %d %I:%M %p %Z')
+
     @lc_tool
     def save_reminder(
         content: str,
         remind_at_iso: str,
         priority: str = "medium",
         category: str = "general",
+        is_checkin: bool = False,
     ) -> str:
         """Save a single reminder at a specific point in time.
         content: what to remind about.
         remind_at_iso: ISO 8601 datetime or natural language like 'tomorrow at 9am'.
         priority: 'low', 'medium', or 'high' (default: medium).
-        category: tag like 'work', 'health', 'personal', etc. (default: general)."""
+        category: tag like 'work', 'health', 'personal', etc. (default: general).
+        is_checkin: set True for intermediate check-in reminders for a long task —
+        they will fire normally but won't appear when the user lists their reminders."""
         dt = _parse_dt(remind_at_iso, tz)
         if not dt:
             return f"Couldn't parse time: {remind_at_iso}"
         p = PRIORITY_MAP.get(priority.lower(), 2)
-        rid = db.save_reminder(content, dt, user_id=user_id, priority=p, category=category)
+        rtype = "checkin" if is_checkin else "single"
+        rid = db.save_reminder(content, dt, user_id=user_id, priority=p, category=category, reminder_type=rtype)
         dt_local = dt.replace(tzinfo=timezone.utc).astimezone(ZoneInfo(tz))
         logger.info("Saved reminder #%d: '%s' at %s", rid, content, dt_local.isoformat())
         return f"Reminder #{rid} saved for {dt_local.strftime('%b %d at %I:%M %p %Z')} [{priority}/{category}]"
@@ -64,9 +71,10 @@ def make_tools(db, tz: str, user_id: Optional[int] = None, ai=None) -> list:
         if not deadline:
             return f"Couldn't parse deadline: {deadline_iso}"
         db.save_deadline_reminders(content, deadline, user_id=user_id)
-        pre = (deadline - timedelta(hours=3)).strftime("%I:%M %p")
-        warn = (deadline - timedelta(minutes=15)).strftime("%I:%M %p")
-        end = deadline.strftime("%I:%M %p")
+        deadline_local = deadline.replace(tzinfo=timezone.utc).astimezone(ZoneInfo(tz))
+        pre = (deadline_local - timedelta(hours=3)).strftime("%I:%M %p %Z")
+        warn = (deadline_local - timedelta(minutes=15)).strftime("%I:%M %p %Z")
+        end = deadline_local.strftime("%I:%M %p %Z")
         return f"Set 3 reminders for '{content}': check-in at {pre}, warning at {warn}, deadline follow-up at {end}."
 
     @lc_tool
@@ -190,7 +198,7 @@ def make_tools(db, tz: str, user_id: Optional[int] = None, ai=None) -> list:
             return "No reminder history yet."
         lines = [
             f"#{r.id} [{PRIORITY_LABEL.get(r.priority, 'med')}/{r.category}] "
-            f"{r.remind_at.strftime('%b %d %I:%M %p')}: {r.content}"
+            f"{_fmt_local(r.remind_at)}: {r.content}"
             for r in reminders
         ]
         return "\n".join(lines)
@@ -214,13 +222,13 @@ def make_tools(db, tz: str, user_id: Optional[int] = None, ai=None) -> list:
     def list_reminders() -> str:
         """List all pending (unsent) reminders."""
         all_reminders = db.get_all_pending_reminders(user_id=user_id)
-        # Hide internal staging reminders (pre_check, warning) — show only user-visible ones
-        reminders = [r for r in all_reminders if r.reminder_type not in ("pre_check", "warning")]
+        INTERNAL_TYPES = ("pre_check", "warning", "checkin")
+        reminders = [r for r in all_reminders if r.reminder_type not in INTERNAL_TYPES]
         if not reminders:
             return "No pending reminders."
         return "\n".join(
             f"#{r.id} [{PRIORITY_LABEL.get(r.priority, 'med')}/{r.category}] "
-            f"{r.remind_at.strftime('%b %d %I:%M %p')}: {r.content}"
+            f"{_fmt_local(r.remind_at)}: {r.content}"
             for r in reminders
         )
 
@@ -309,7 +317,7 @@ def make_tools(db, tz: str, user_id: Optional[int] = None, ai=None) -> list:
             logger.exception("Failed to list calendar events")
             return f"Couldn't fetch calendar events: {e}"
 
-    INTERNAL_TYPES = ("pre_check", "warning")
+    INTERNAL_TYPES = ("pre_check", "warning", "checkin")
 
     @lc_tool
     def list_reminders_filtered(category: str = "", priority: str = "", due_today: bool = False) -> str:
@@ -344,7 +352,7 @@ def make_tools(db, tz: str, user_id: Optional[int] = None, ai=None) -> list:
             return f"No reminders matching {desc}"
         return "\n".join(
             f"#{r.id} [{PRIORITY_LABEL.get(r.priority, 'med')}/{r.category}] "
-            f"{r.remind_at.strftime('%b %d %I:%M %p')}: {r.content}"
+            f"{_fmt_local(r.remind_at)}: {r.content}"
             for r in reminders
         )
 
