@@ -38,6 +38,16 @@ fi
 # --- Create project directory if needed ---
 mkdir -p "$PROJECT_DIR/data"
 
+# --- Check .env exists ---
+ENV_FILE="$PROJECT_DIR/.env"
+if [ ! -f "$ENV_FILE" ]; then
+    echo ""
+    echo "ERROR: .env file not found at $ENV_FILE"
+    echo "Create it with your secrets before running this script:"
+    echo "  nano $ENV_FILE"
+    exit 1
+fi
+
 # --- Write docker-compose.yml (no build, images only) ---
 echo "-> Writing docker-compose.yml..."
 cat > "$COMPOSE_FILE" <<EOF
@@ -45,20 +55,20 @@ services:
   reminder-agent:
     image: $BOT_IMAGE
     restart: unless-stopped
-    env_file: $HOME/.env
+    env_file: .env
     volumes:
-      - $PROJECT_DIR/data:/app/data
+      - ./data:/app/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
   dashboard-backend:
     image: $BACKEND_IMAGE
     restart: unless-stopped
-    env_file: $HOME/.env
+    env_file: .env
     ports:
       - "8000:8000"
     volumes:
-      - $PROJECT_DIR/data:/app/data
+      - ./data:/app/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -79,12 +89,13 @@ docker pull "$FRONTEND_IMAGE"
 
 # --- Restart containers ---
 echo "-> Restarting containers..."
-$DC -f "$COMPOSE_FILE" up -d
+cd "$PROJECT_DIR"
+$DC up -d
 
 # --- Wait for containers to be running ---
 echo "-> Waiting for containers..."
 for i in $(seq 1 15); do
-    RUNNING=$($DC -f "$COMPOSE_FILE" ps --status running --quiet 2>/dev/null | wc -l | tr -d ' ')
+    RUNNING=$($DC ps --status running --quiet 2>/dev/null | wc -l | tr -d ' ')
     if [ "$RUNNING" -ge 1 ]; then
         echo "   Containers up ($RUNNING running)."
         break
